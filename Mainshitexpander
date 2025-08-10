@@ -1,0 +1,328 @@
+pcall(function()
+
+-- Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local LP = Players.LocalPlayer
+local CoreGui = game:GetService("CoreGui")
+
+-- Settings
+local MIN_SIZE, MAX_SIZE = 2, 15
+local UPDATE_INTERVAL = 0.2
+local headSize = 5
+local enabled = false
+local selectedParts = { Head = true, Torso = true, Arms = true, Legs = true }
+
+-- State
+local draggingSlider = false
+local originalSizes = {}
+local debounce = false
+local guiVisible = true
+
+-- Random name function
+local function randName(prefix)
+	return prefix .. tostring(math.random(1000, 9999))
+end
+
+-- Detect rig type (R6 or R15)
+local function getRigType(char)
+	if char:FindFirstChild("UpperTorso") then
+		return "R15"
+	else
+		return "R6"
+	end
+end
+
+-- Get correct part targets for R6/R15
+local function getPartTargets(char, partName)
+	local rig = getRigType(char)
+	local targets = {}
+
+	if partName == "Head" then
+		local p = char:FindFirstChild("Head")
+		if p then table.insert(targets, p) end
+
+	elseif partName == "Torso" then
+		if rig == "R15" then
+			for _, n in ipairs({"UpperTorso", "LowerTorso"}) do
+				local p = char:FindFirstChild(n)
+				if p then table.insert(targets, p) end
+			end
+		else
+			local p = char:FindFirstChild("Torso")
+			if p then table.insert(targets, p) end
+		end
+
+	elseif partName == "Arms" then
+		if rig == "R15" then
+			for _, n in ipairs({"LeftUpperArm", "LeftLowerArm", "RightUpperArm", "RightLowerArm"}) do
+				local p = char:FindFirstChild(n)
+				if p then table.insert(targets, p) end
+			end
+		else
+			for _, n in ipairs({"Left Arm", "Right Arm"}) do
+				local p = char:FindFirstChild(n)
+				if p then table.insert(targets, p) end
+			end
+		end
+
+	elseif partName == "Legs" then
+		if rig == "R15" then
+			for _, n in ipairs({"LeftUpperLeg", "LeftLowerLeg", "RightUpperLeg", "RightLowerLeg"}) do
+				local p = char:FindFirstChild(n)
+				if p then table.insert(targets, p) end
+			end
+		else
+			for _, n in ipairs({"Left Leg", "Right Leg"}) do
+				local p = char:FindFirstChild(n)
+				if p then table.insert(targets, p) end
+			end
+		end
+	end
+
+	return targets
+end
+
+-- Reset all players' parts to original
+local function resetAllParts()
+	for player, parts in pairs(originalSizes) do
+		for partObj, origSize in pairs(parts) do
+			pcall(function()
+				partObj.Size = origSize
+				partObj.Material = Enum.Material.Plastic
+				partObj.Transparency = 0
+				partObj.Massless = false
+				partObj.CanCollide = true
+			end)
+		end
+	end
+end
+
+-- Reset single part category
+local function resetPartCategory(player, category)
+	for _, part in ipairs(getPartTargets(player.Character, category)) do
+		local origSize = originalSizes[player] and originalSizes[player][part]
+		if origSize then
+			pcall(function()
+				part.Size = origSize
+				part.Material = Enum.Material.Plastic
+				part.Transparency = 0
+				part.Massless = false
+				part.CanCollide = true
+			end)
+		end
+	end
+end
+
+-- Expand Logic
+local function expandPart(player)
+	local char = player.Character
+	if not char then return end
+
+	for partName, isSelected in pairs(selectedParts) do
+		if isSelected then
+			for _, part in ipairs(getPartTargets(char, partName)) do
+				if not originalSizes[player] then originalSizes[player] = {} end
+				if not originalSizes[player][part] then originalSizes[player][part] = part.Size end
+
+				pcall(function()
+					part.Size = Vector3.new(headSize, headSize, headSize)
+					part.Material = Enum.Material.Neon
+					part.Transparency = 0.4
+					part.Massless = true
+					part.CanCollide = false
+				end)
+			end
+		end
+	end
+end
+
+-- GUI Setup
+local gui = Instance.new("ScreenGui")
+gui.Name = randName("ux_")
+gui.IgnoreGuiInset = true
+gui.ResetOnSpawn = false
+gui.Parent = CoreGui
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 140, 0, 200)
+frame.Position = UDim2.new(0, 10, 0.5, -100)
+frame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Draggable = true
+frame.Parent = gui
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 20)
+title.BackgroundTransparency = 1
+title.Text = "Undetek X"
+title.TextColor3 = Color3.new(1, 1, 1)
+title.Font = Enum.Font.GothamSemibold
+title.TextSize = 13
+title.Parent = frame
+
+local sizeLabel = Instance.new("TextLabel")
+sizeLabel.Position = UDim2.new(0, 0, 0, 24)
+sizeLabel.Size = UDim2.new(1, 0, 0, 14)
+sizeLabel.Text = "Size: " .. headSize
+sizeLabel.Font = Enum.Font.Gotham
+sizeLabel.TextSize = 10
+sizeLabel.TextColor3 = Color3.new(1, 1, 1)
+sizeLabel.BackgroundTransparency = 1
+sizeLabel.Parent = frame
+
+local sliderBack = Instance.new("Frame")
+sliderBack.Position = UDim2.new(0.5, -50, 0, 42)
+sliderBack.Size = UDim2.new(0, 100, 0, 4)
+sliderBack.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+sliderBack.BorderSizePixel = 0
+sliderBack.Parent = frame
+Instance.new("UICorner", sliderBack).CornerRadius = UDim.new(0, 2)
+
+local sliderFill = Instance.new("Frame")
+sliderFill.Size = UDim2.new((headSize - MIN_SIZE)/(MAX_SIZE - MIN_SIZE), 0, 1, 0)
+sliderFill.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+sliderFill.BorderSizePixel = 0
+sliderFill.Parent = sliderBack
+Instance.new("UICorner", sliderFill).CornerRadius = UDim.new(0, 2)
+
+local toggle = Instance.new("TextButton")
+toggle.Position = UDim2.new(0.5, -50, 0, 54)
+toggle.Size = UDim2.new(0, 100, 0, 20)
+toggle.BackgroundColor3 = Color3.fromRGB(30, 120, 30)
+toggle.Text = "OFF"
+toggle.TextColor3 = Color3.new(1, 1, 1)
+toggle.Font = Enum.Font.Gotham
+toggle.TextSize = 11
+toggle.Parent = frame
+Instance.new("UICorner", toggle).CornerRadius = UDim.new(0, 5)
+
+local partList = { "Head", "Torso", "Arms", "Legs" }
+for i, part in ipairs(partList) do
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0, 100, 0, 16)
+	btn.Position = UDim2.new(0.5, -50, 0, 80 + (i - 1) * 18)
+	btn.Text = "☑️ " .. part
+	btn.Font = Enum.Font.Gotham
+	btn.TextSize = 10
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+	btn.Parent = frame
+	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+
+	btn.MouseButton1Click:Connect(function()
+		selectedParts[part] = not selectedParts[part]
+		btn.Text = (selectedParts[part] and "☑️ " or "☐ ") .. part
+
+		local anySelected = false
+		for _, v in pairs(selectedParts) do
+			if v then anySelected = true break end
+		end
+
+		if not anySelected then
+			enabled = false
+			resetAllParts()
+			toggle.Text = "OFF"
+			toggle.BackgroundColor3 = Color3.fromRGB(30, 120, 30)
+		else
+			resetPartCategory(LP, part)
+		end
+	end)
+end
+
+-- Slider Logic
+local function updateSlider(x)
+	local relX = math.clamp((x - sliderBack.AbsolutePosition.X) / sliderBack.AbsoluteSize.X, 0, 1)
+	sliderFill.Size = UDim2.new(relX, 0, 1, 0)
+	headSize = math.round(MIN_SIZE + relX * (MAX_SIZE - MIN_SIZE))
+	sizeLabel.Text = "Size: " .. headSize
+end
+
+sliderBack.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		draggingSlider = true
+		frame.Draggable = false
+		updateSlider(input.Position.X)
+	end
+end)
+
+UIS.InputChanged:Connect(function(input)
+	if draggingSlider and input.UserInputType == Enum.UserInputType.MouseMovement then
+		updateSlider(input.Position.X)
+	end
+end)
+
+UIS.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		draggingSlider = false
+		frame.Draggable = true
+	end
+end)
+
+-- Toggle Logic
+toggle.MouseButton1Click:Connect(function()
+	if debounce then return end
+	debounce = true
+
+	local anySelected = false
+	for _, v in pairs(selectedParts) do
+		if v then anySelected = true break end
+	end
+
+	if anySelected then
+		enabled = not enabled
+		if not enabled then
+			resetAllParts()
+		end
+	end
+
+	toggle.Text = enabled and "ON" or "OFF"
+	toggle.BackgroundColor3 = enabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(30, 120, 30)
+	task.delay(0.25, function() debounce = false end)
+end)
+
+-- Setup Player
+local function setupPlayer(player)
+	player.CharacterAppearanceLoaded:Connect(function()
+		originalSizes[player] = nil
+		task.wait(0.2)
+		if enabled then expandPart(player) end
+	end)
+end
+
+Players.PlayerRemoving:Connect(function(player)
+	originalSizes[player] = nil
+end)
+
+for _, plr in ipairs(Players:GetPlayers()) do
+	if plr ~= LP then setupPlayer(plr) end
+end
+
+Players.PlayerAdded:Connect(function(plr)
+	if plr ~= LP then setupPlayer(plr) end
+end)
+
+-- Main Loop
+task.spawn(function()
+	while true do
+		if enabled then
+			for _, player in ipairs(Players:GetPlayers()) do
+				if player ~= LP then expandPart(player) end
+			end
+		end
+		RunService.Heartbeat:Wait(UPDATE_INTERVAL)
+	end
+end)
+
+-- GUI toggle with M
+UIS.InputBegan:Connect(function(input, gameProcessed)
+	if not gameProcessed and input.KeyCode == Enum.KeyCode.M then
+		guiVisible = not guiVisible
+		frame.Visible = guiVisible
+	end
+end)
+
+end)
